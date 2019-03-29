@@ -24,6 +24,7 @@ import gupao.gpSpring.annotations.GPController;
 import gupao.gpSpring.annotations.GPRequestMapping;
 import gupao.gpSpring.annotations.GPService;
 
+/**v3.servlet.GPDispatcherServlet对url的mapping进行了优化，同时保存了方法持有对象以及参数*/
 public class GPDispatchServlet extends HttpServlet{
 	private Properties contextConfig=new Properties();
 	private List<String> classNames=new ArrayList<String>();
@@ -110,7 +111,7 @@ public class GPDispatchServlet extends HttpServlet{
 					if(clazz.isAnnotationPresent(GPController.class)) {
 						Object instance=clazz.newInstance();
 						//用首字母小写的className作为key
-						String beanName=clazz.getSimpleName();
+						String beanName=clazz.getName();
 						System.out.println("simpleName="+beanName);
 						ioc.put(beanName.substring(0, 1).toLowerCase()+beanName.substring(1), instance); 
 					}else if(clazz.isAnnotationPresent(GPService.class)) {
@@ -119,21 +120,26 @@ public class GPDispatchServlet extends HttpServlet{
 						//2. 自定义的beanName ，如@GPService("xxxxx")
 						GPService service=clazz.getAnnotation(GPService.class);
 						String beanName=service.value();
+						if("".equals(beanName.trim())){
+							beanName = toLowerFirstCase(clazz.getName());
+						} 
+						ioc.put(beanName,instance);
+						
 						//3. 根据类型自动赋值
-						for(Class<?> i:clazz.getInterfaces()) {
+						for(Class<?> i:clazz.getInterfaces()) { //感觉这里有问题，如果接口有多个实现的话，那spring怎么知道注入的是哪一个实现的对象。。除非只有一个
 							ioc.put(i.getName(), instance);
 						}
 					}
 				} catch (Exception e) {
 					e.printStackTrace();
 				}
+				
 			}
 		}
 		System.out.println("ioc容器已完成初始化，有对象个数:"+ioc.size());
-		for(String clazz:ioc.keySet()){
-			System.out.println("	"+ioc.get(clazz));
+		for(String key:ioc.keySet()){
+			System.out.println("容器中存入："+key+"-"+ioc.get(key));
 		}
-		
 	}
 
 	private void doAutowired() {
@@ -205,19 +211,20 @@ public class GPDispatchServlet extends HttpServlet{
 		
 		if(!this.handlerMapping.containsKey(url)) {
 			try {
-				resp.getWriter().write("404 Not FOUND-Mapping中午匹配");
+				resp.getWriter().write("404 Not FOUND-Mapping Fail");
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
 		}else {
 			Method method=this.handlerMapping.get(url);
 			//通过反射拿到method所在class，再拿到ioc中的对象
-			String beanName=method.getClass().getSimpleName();
+			String beanName=method.getDeclaringClass().getName();//注意是getDeclaringClass()，不是getClass()
+			System.out.println("	匹配的method对应的bean:"+beanName);
 			//首字母转小写
 			Map<String,String[]> params=req.getParameterMap();
 			try {
 				method.invoke(ioc.get(toLowerFirstCase(beanName)), new Object[] {
-						req,resp,params.get("name")[0]});
+						req,resp,params.get("name")[0]}); //这里参数是写死的，取的是http://localhost:8080/study/demo/query?name=a中name对应的a，可能为null
 			} catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
 				e.printStackTrace();
 			}
